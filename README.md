@@ -16,6 +16,7 @@
 4. 对数据的周期性特征进行挖掘，推断出老人的日常生活习惯；5天之内推动了该合作项目的进展。
 
 ## 查看Jupyter
+(解决Jupyter在GitHub上加载查看失败的问题)
 1. 在线网站 ： https://nbviewer.jupyter.org/
 2. 转成HTML： jupyter nbconvert --to html --execute YOUR_FILE.ipynb --output OUTPUT.html
 
