@@ -1,0 +1,133 @@
+package com.taobao.content.detail.udf.odps;
+
+import com.aliyun.odps.udf.UDF;
+import com.taobao.content.util.CPKeyValueUtil;
+
+public class CPKeyValueUDF extends UDF {
+
+    public String evaluate(String text, String separator, String separatorInner, String key) {
+        return CPKeyValueUtil.eval(text, separator, separatorInner, key);
+    }
+
+}
+
+
+
+package com.taobao.content.util;
+
+import com.sun.jndi.toolkit.url.UrlUtil;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class CPKeyValueUtil {
+
+    public static String eval(String text, String separator, String separatorInner, String key) {
+        if (StringUtils.isBlank(text)
+                || StringUtils.isBlank(separator)
+                || StringUtils.isBlank(separatorInner)
+                || StringUtils.isBlank(key)) {
+            return null;
+        }
+
+        String[] splitArr = text.split(separator);
+        String resultText = null;
+        for (String splitText: splitArr) {
+            String[] splitInnerArr = splitText.split(separatorInner);
+            if (splitInnerArr == null || splitInnerArr.length < 1) {
+                continue;
+            }
+            if (!key.equalsIgnoreCase(splitInnerArr[0])) {
+                continue;
+            }
+            // key和splitInnerArr[0]相等
+            int startIndex = splitInnerArr[0].length() + separatorInner.length();
+            if (startIndex < 0 || startIndex >= splitText.length()) {
+                continue;
+            }
+            resultText = splitText.substring(startIndex);
+        }
+
+        return resultText;
+    }
+
+    public static final String REGEX = "[\\s\\S]*#key##separatorInner#([\\s\\S]*?)((#separator#[\\w^,]*?#separatorInner#)|$)";
+    public static String getByRegex(String text, String separator, String separatorInner, String key) {
+        String regex = REGEX;
+        regex = regex.replaceAll("#separator#", separator);
+        regex = regex.replaceAll("#separatorInner#", separatorInner);
+        regex = regex.replaceAll("#key#", key);
+
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(text);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+
+    }
+
+    public static String getDecodeJSONTextByRegex(String text, String separator, String separatorInner, String key) {
+        String regexResult = getByRegex(text, separator, separatorInner, key);
+        if (StringUtils.isBlank(regexResult)) {
+            return regexResult;
+        }
+
+        String resultText = regexResult;
+        String regexResultLower = regexResult.toLowerCase();
+        if (regexResultLower.startsWith("%7b") && regexResultLower.endsWith("%7d")) {
+            // JSON被encode了，decode一下
+            resultText = URLUtil.decode(regexResult);
+        }
+
+        return resultText;
+    }
+
+    // 根据特殊的方式进行截取
+    public static String getBySpecial(String text, String separator, String separatorInner, String key) {
+        int keyIndex = StringUtils.indexOf(text, key + separatorInner);
+        if (keyIndex == -1) {
+            return null;
+        }
+        int startIndex = keyIndex + (key + separatorInner).length();
+        String subText = StringUtils.substring(text, startIndex);
+        if (StringUtils.isBlank(subText)) {
+            return null;
+        }
+        String value = null;
+        if (subText.startsWith("{")) {
+            int subStopIndex = StringUtils.indexOf(subText, "}") + 1;
+            if (subStopIndex <= 0) {
+                // 没有找到后续的匹配符号
+                return null;
+            } else {
+                // 这里可能会出现 匹配符号下标在分隔符之前 的情况，暂时不处理。
+                value = StringUtils.substring(subText, 0, subStopIndex);
+            }
+        } else if (subText.startsWith("%7b") || subText.startsWith("%7B")) {
+            int subStopIndex = StringUtils.indexOf(subText.toLowerCase(), "%7d") + 3;
+            if (subStopIndex <= 0) {
+                // 没有找到后续的匹配符号
+                return null;
+            } else {
+                int subSeparatorIndex = StringUtils.indexOf(subText.toLowerCase(), separator) + separator.length();
+                if (subSeparatorIndex > 0 && subSeparatorIndex <= subStopIndex) {
+                    // 能找到分隔符，且后续的匹配符号下标在分隔符之前
+                    return null;
+                }
+                value = StringUtils.substring(subText, 0, subStopIndex);
+                // 需要decode一下
+                value = URLUtil.decode(value);
+            }
+
+        } else {
+            int subStopIndex = StringUtils.indexOf(subText, separator);
+            value = StringUtils.substring(subText, 0, subStopIndex);
+        }
+
+        return value;
+    }
+
+
+}
