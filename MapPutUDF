@@ -1,0 +1,57 @@
+package com.taobao.content.odps.udf;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.TypeReference;
+import com.aliyun.odps.udf.UDF;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class MapPutUDF extends UDF {
+    public String evaluate(Map<String, String> map, String... args) {
+        if (args != null && args.length != 0) {
+            if (map == null) {
+                map = new HashMap<>();
+            }
+            for (int i = 0; i < args.length; i += 2) {
+                String key = args[i];
+                if (key == null) {
+                    continue;
+                }
+                if (i + 1 >= args.length) {
+                    continue;
+                }
+                map.put(key, args[i + 1]);
+            }
+        }
+        return JSON.toJSONString(map);
+    }
+
+    public String eval(String jsonObjStr, String... args) {
+        Map<String, String> map = null;
+        try {
+            map = JSONObject.parseObject(jsonObjStr, new TypeReference<Map<String, String>>(){});
+        } catch (Exception e) {
+            System.err.println("JSON解析失败，str=" + jsonObjStr + ", error=" + ExceptionUtils.getStackTrace(e));
+        }
+        if (args != null && args.length != 0) {
+            if (map == null) {
+                map = new HashMap<>();
+            }
+            for (int i = 0; i < args.length; i += 2) {
+                String key = args[i];
+                if (key == null) {
+                    continue;
+                }
+                if (i + 1 >= args.length) {
+                    continue;
+                }
+                map.put(key, args[i + 1]);
+            }
+        }
+
+        return JSON.toJSONString(map);
+    }
+}
