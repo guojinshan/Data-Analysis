@@ -1,0 +1,143 @@
+package com.taobao.content.odps.udf;
+
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.aliyun.odps.udf.UDF;
+import com.aliyun.odps.udf.annotation.Resolve;
+import com.aliyun.oss.OSS;
+import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.model.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.*;
+
+@Resolve("String -> String")
+public class GetOssDirFilesUDF extends UDF {
+
+    private static InnerOssConfig innerOssConfig;
+
+    private static Map<String, OSS> FILE_DIR_OSS_CLIENT_MAP = new HashMap<>();
+
+    OSS ossClient = null;
+
+    public String evaluate(String configJson) {
+        try {
+            JSONObject configJsonObject = JSON.parseObject(configJson);
+            // 获取Oss配置信息和文件目录
+            JSONObject ossConfig = new JSONObject();
+            ossConfig.put("accessKeyId", configJsonObject.getString("accessKeyId"));
+            ossConfig.put("accessKeySecret", configJsonObject.getString("accessKeySecret"));
+            ossConfig.put("endpoint", configJsonObject.getString("endpoint"));
+            ossConfig.put("bucket", configJsonObject.getString("bucket"));
+            String userPath = configJsonObject.getString("userPath");
+            String fileDir = userPath + "/" + configJsonObject.getString("fileDir");
+            // 解析OSS客户端链接信息，通过明文AK进行连接
+            if (innerOssConfig == null) {
+                innerOssConfig = JSON.parseObject(ossConfig.toJSONString(), InnerOssConfig.class);
+            }
+
+            // 初始化Oss客户端
+            ossClient =  new OSSClientBuilder().build(
+                    innerOssConfig.getEndpoint(),
+                    innerOssConfig.getAccessKeyId(),
+                    innerOssConfig.getAccessKeySecret()
+            );
+            FILE_DIR_OSS_CLIENT_MAP.put(fileDir, ossClient);
+
+            // 返回目录下所有文件，英文逗号拼接
+            return retrieveAllDirFiles(ossClient, innerOssConfig.getBucket(), fileDir);
+        } catch (Throwable e) {
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    /**
+     * 获取给定目录下所有的文件
+     *
+     * @param ossClient OSS客户端
+     * @param bucket 项目空间
+     * @param fileDir 文件目录路径
+     *
+     */
+    private static String retrieveAllDirFiles(OSS ossClient, String bucket, String fileDir) {
+        try {
+            System.out.println("fileDir:" + fileDir);
+
+            List<String> fileKeysList = new ArrayList<>(1);
+
+            // 设置
+            ListObjectsRequest listObjectsRequest = new ListObjectsRequest();
+            listObjectsRequest.setBucketName(bucket);
+            listObjectsRequest.setPrefix(fileDir + "/");
+            listObjectsRequest.setMaxKeys(1000);
+            ObjectListing objectListing = ossClient.listObjects(listObjectsRequest);
+
+            int fileNums = objectListing.getObjectSummaries().size();
+            System.out.println("fileNums:" + fileNums);
+
+            // 遍历目录下已有的key
+            if (fileNums > 0) {
+                for (OSSObjectSummary s : objectListing.getObjectSummaries()) {
+                    String sourceKey = s.getKey();
+                    if (!sourceKey.contains(".meta")) {
+                        fileKeysList.add(sourceKey);
+                    }
+                }
+            }
+            return String.join(",", fileKeysList);
+
+        } catch (Throwable e) {
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    /**
+     * 关闭所有文件目录已创建的OSS客户端
+     */
+    @Override
+    public void close() {
+        System.out.println(">>>>>> Start closing OSS Client.");
+        //关闭所有文件目录对应的OSS客户端
+        for (OSS ossClient : FILE_DIR_OSS_CLIENT_MAP.values()) {
+            ossClient.shutdown();
+        }
+        System.out.println(">>>>>> All OSS Client closed.");
+    }
+
+    /**
+     * OSS配置信息静态内部类
+     *
+     */
+    @Getter
+    @Setter
+    public static class InnerOssConfig {
+        /**
+         * 定义OSS访问网关endpoint
+         */
+        private String endpoint;
+        /**
+         * 定义OSS访问密钥accessKeyId
+         */
+        private String accessKeyId;
+        /**
+         * 定义OSS访问密钥accessKeySecret
+         */
+        private String accessKeySecret;
+        /**
+         * 定义OSS访问存储空间bucket
+         */
+        private String bucket;
+
+        public InnerOssConfig(String endpoint, String accessKeyId, String accessKeySecret, String bucket) {
+            this.endpoint = endpoint;
+            this.accessKeyId = accessKeyId;
+            this.accessKeySecret = accessKeySecret;
+            this.bucket = bucket;
+        }
+    }
+
+}
