@@ -1,0 +1,12 @@
+package com.taobao.content.detail.udf.odps;
+
+import com.aliyun.odps.udf.UDF;
+import com.taobao.content.util.CPKeyValueUtil;
+
+public class CPKeyValueSpecialUDF extends UDF {
+
+    public String evaluate(String text, String separator, String separatorInner, String key) {
+        return CPKeyValueUtil.getBySpecial(text, separator, separatorInner, key);
+    }
+
+}
