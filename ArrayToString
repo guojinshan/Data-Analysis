@@ -1,0 +1,24 @@
+package com.taobao.content.odps.udf;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.JSONValidator;
+import com.aliyun.odps.udf.UDF;
+import com.taobao.cybertron.util.ImageUrlUtils;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * UDF: array_to_string
+ *
+ * @author juede.tcever
+ */
+public class ArrayToString extends UDF {
+
+    public String evaluate(List<String> list) {
+        List<Object> result = list.stream().map(JSONObject::parseObject).collect(Collectors.toList());
+        return JSON.toJSONString(result);
+    }
+}
