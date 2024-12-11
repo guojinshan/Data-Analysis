@@ -1,0 +1,78 @@
+package com.taobao.content.detail.udf.odps;
+
+import com.aliyun.odps.udf.UDF;
+import com.taobao.content.util.CPJsonFormatUtil;
+
+public class CPToJsonUDF extends UDF {
+
+    public String evaluate(String... args) {
+        return CPJsonFormatUtil.formatToJson(args);
+    }
+
+}
+
+
+package com.taobao.content.util;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.TypeReference;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class CPJsonFormatUtil {
+
+    public static String formatToJson(Object... args) {
+        JSONObject json = new JSONObject();
+        if (args != null && args.length != 0) {
+            for (int index = 0; index < args.length; index += 2) {
+                Object obj = args[index];
+                if (obj == null || StringUtils.isBlank(obj.toString())) {
+                    continue;
+                }
+                if (index + 1 >= args.length) {
+                    continue;
+                }
+                String key = obj.toString();
+                json.put(key, args[index + 1]);
+            }
+        }
+        return JSON.toJSONString(json);
+    }
+
+    public static String formatToJsonArray(Object... args) {
+        JSONArray jsonArray = new JSONArray();
+        for (Object obj: args) {
+            jsonArray.add(obj);
+        }
+        return JSON.toJSONString(jsonArray);
+    }
+
+    public static Map<String, Object> formatToMap(String text) {
+        if (StringUtils.isBlank(text)) {
+            return new HashMap<>();
+        }
+        try {
+            return JSONObject.parseObject(text, new TypeReference<Map<String, Object>>(){});
+        } catch (Exception e) {
+            // Do nothing
+        }
+        return new HashMap<>();
+    }
+
+    public static <T> T formatToClass(String text, TypeReference<T> type) {
+        if (StringUtils.isBlank(text)) {
+            return null;
+        }
+        try {
+            return JSONObject.parseObject(text, type);
+        } catch (Exception e) {
+            // Do nothing
+        }
+        return null;
+    }
+
+}
