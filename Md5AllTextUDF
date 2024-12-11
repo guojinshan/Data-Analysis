@@ -1,0 +1,35 @@
+package com.taobao.content.odps.udf;
+
+import com.aliyun.odps.udf.UDF;
+
+import javax.xml.bind.DatatypeConverter;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
+public class Md5AllTextUDF extends UDF {
+    public String evaluate(String... strs) throws NoSuchAlgorithmException {
+        if(strs == null || strs.length == 0){
+            return null;
+        }
+
+        StringBuffer stringBuffer = new StringBuffer();
+
+        for (String s : strs) {
+            if(s==null) {
+                stringBuffer.append(",");
+            }
+            else
+            {
+                stringBuffer.append(s+",");
+            }
+        }
+
+        MessageDigest md = MessageDigest.getInstance("MD5");
+        md.update(stringBuffer.toString().getBytes());
+        byte[] digest = md.digest();
+        String myHash = DatatypeConverter.printHexBinary(digest).toUpperCase();
+
+        return myHash;
+
+    }
+}
