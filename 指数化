@@ -1,0 +1,173 @@
+# -*- coding: utf-8 -*-
+# -- **************************************************************** --
+# -- 作者: 惟欢
+# -- 创建时间：20230921
+# -- 脚本说明：
+#    -- 用于将数值指数化，可通过min_threshold参数指定指数化的下限，默认为30
+# -- 变更说明：
+# -- **************************************************************** --
+
+from odps.udf import annotate
+import numpy as np
+
+@annotate('string, bigint, bigint, string, bigint->string')
+class get_num_indexation(object):
+    def __init__(self):
+        """
+        :@param
+        :@func：
+            初始化、引入第三方包
+        :@return
+        """
+        import sys
+        sys.path.insert(0, 'work/sklearn.zip')
+        sys.path.insert(0, 'work/numpy37x86.zip')
+        sys.path.insert(0, 'work/scipy.zip')
+        self.order_dict = {
+            'ASC': False,
+            'DESC': True
+        }
+
+    def threshold_check(self, threshold):
+        """
+        :@param
+        :@func：
+            指数化阈值校验
+        :@return
+        """
+        if threshold < 0 or threshold > 100:
+            raise ValueError("Please specify the minimum threshold for exponential scaling, range [0, 100], default value is 30.")
+
+    def chunk_length_check(self, chunk_length):
+        """
+        :@param
+        :@func：
+            指数化区间划分长度校验
+        :@return
+        """
+        if chunk_length < 0:
+            raise ValueError("The length of the interval division for exponential scaling must be greater than 0, with a default value of 10.")
+
+    def get_chunk_num(self, min_threshold, max_threshold, chunk_length):
+        """
+        :@param
+        :@func：
+            获取指数化区间切分个数，向上取整
+        :@return
+        """
+        chunk_num = float(max_threshold - min_threshold) / chunk_length
+        return np.ceil(chunk_num)
+
+    def index_intervals_chunk(self, min_threshold, max_threshold, chunk_length, data_length):
+        """
+        :@param
+        :@func：
+            指数化各个区间切分范围
+        :@return
+            各指数化区间最大值以及最小值
+        """
+        chunk_intervals = []
+        # 计算切分区间数
+        if data_length < max_threshold - min_threshold or data_length % chunk_length == 0 or data_length < chunk_length:
+            chunk_num = int(np.ceil(float(data_length) / chunk_length))
+        else:
+            chunk_num = int(self.get_chunk_num(min_threshold, max_threshold, chunk_length))
+        # 不同的切分区间数量，对应不同的区间切分长度，不再与原始传参的chunk_length一致，需重新计算
+        chunk_length_new = float(max_threshold - min_threshold) / chunk_num
+        # 计算每一个指数化区间的上下限
+        for i in range(int(chunk_num)):
+            lower_limit = min_threshold + i * chunk_length_new
+            upper_limit = min_threshold + (i + 1) * chunk_length_new
+            chunk_intervals.append((lower_limit, upper_limit))
+        return chunk_intervals
+
+    def data_intervals_chunk(self, data_list, chunk_num):
+        """
+        :@param
+            data_list：原数组列表
+        :@func：
+            数组切分
+        :@return
+            data_chunk_list：切分后数据列表
+            data_chunk_length：数组切分长度
+        """
+        # 获取数组长度
+        data_length = len(data_list)
+        # 获取数组区间切分长度
+        data_chunk_length = int(np.ceil(float(data_length) / chunk_num))
+        # 初始化数组切分列表
+        data_chunk_list = []
+        for i in range(int(chunk_num)):
+            data_chunk_list.append(data_list[i * data_chunk_length:(i + 1) * data_chunk_length])
+        return data_chunk_list, data_chunk_length
+
+    def indexation(self, data_str, min_threshold, max_threshold, order, chunk_length):
+        """
+        :@param
+        :@func：
+            数值指数化
+        :@return
+        """
+        from sklearn.preprocessing import MinMaxScaler
+        # 获取待指数化数组以及长度
+        data_array = data_str.split(',')
+        data_array_length = len(data_array)
+        # 指数化区间切分
+        chunk_intervals = self.index_intervals_chunk(min_threshold, max_threshold, chunk_length, data_array_length)
+        chunk_intervals_length = len(chunk_intervals)
+        # 主键列数组
+        idx = np.array([i.split(':')[0] for i in data_array if i is not None])
+        # 数值列数组
+        data_list = np.array([i.split(':')[1] for i in data_array if i is not None])
+        data_list = list(map(lambda x: float(x), data_list))
+
+        # 指数化第一步：先对数组 & 数组的主键列进行排序
+        sorted_indexes = sorted(
+            range(len(data_list)),
+            key=lambda x: data_list[x],
+            reverse=order
+        )
+        # 对数据进行排序
+        data_list.sort(reverse=order)
+        # 对数组原主键列进行排序
+        idx_sorted = idx[sorted_indexes]
+        # 指数化第二步：对数组进行切分，切分成"指数化区间个数"区间
+        data_chunk_list, data_chunk_length = self.data_intervals_chunk(data_list, chunk_intervals_length)
+
+        # 指数化第三步：对每个区间进行指数化
+        if len(data_chunk_list) != len(chunk_intervals):
+            raise ValueError("The number of divisions for exponential interval ({0}) does not match the number of divisions for the array interval ({1}).".format(
+                    len(data_chunk_list), chunk_intervals_length)
+                )
+        res = ''
+
+        for i in range(chunk_intervals_length):
+            res_tmp = None
+            data = data_chunk_list[i]
+            scale_range_min = float(chunk_intervals[i][0]) / 100
+            scale_range_max = float(chunk_intervals[i][1]) / 100
+            scaler = MinMaxScaler(feature_range=(scale_range_min, scale_range_max))
+            res_trans = scaler.fit_transform(np.array([data]).reshape(-1, 1)) * 100
+            # 特殊处理，当只有单个类目时，指数值显示为100，而不是30
+            if data_array_length == 1:
+                res_trans[0] = 100.0
+            res_tmp = ','.join([str(x) + ':' + str(y) for x, y in zip(
+                idx_sorted[i * data_chunk_length:(i + 1) * data_chunk_length],
+                res_trans.reshape(1, -1)[0])]
+            )
+            res += res_tmp
+            if i < chunk_intervals_length - 1:
+                res += ','
+        # 返回指数化结果
+        return res
+
+    # 实现evaluate函数
+    def evaluate(self, s, min_threshold, max_threshold, order, chunk_length):
+        self.threshold_check(min_threshold)
+        self.threshold_check(max_threshold)
+        self.chunk_length_check(chunk_length)
+        if order not in ('ASC', 'DESC'):
+            raise ValueError("Please specify whether to use ascending (ASC) or descending (DESC) order for exponential scaling, with the default being ascending.")
+        order = self.order_dict[order]
+        if s is not None:
+            return self.indexation(s, min_threshold, max_threshold, order, chunk_length)
